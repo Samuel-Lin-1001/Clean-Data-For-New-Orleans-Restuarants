@@ -1,0 +1,655 @@
+---
+title: "Steps 5–6: Where to Find the Best Chinese, Vietnamese, and Japanese Food in New Orleans"
+subtitle: "Establishing the city boundary and choosing a geographic system"
+author: Samuel Lin
+date: last-modified
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-tools: true
+    theme: cosmo
+    fig-width: 8
+    fig-height: 6
+execute:
+  echo: true
+  eval: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: settings
+#| include: false
+
+# Uses the first location where the file exists
+business_rds_options <- c("nola_business.rds", "data/new_orleans/nola_business.rds")
+business_rds <- business_rds_options[file.exists(business_rds_options)][1]
+if (is.na(business_rds)) stop("nola_business.rds not found. Put it in the project folder or data/new_orleans/.")
+
+cuisines <- c("chinese", "vietnamese", "japanese")
+cuisine_colors <- c("Chinese" = "#C0392B", "Vietnamese" = "#27AE60", "Japanese" = "#2E86C1", "Mixed" = "#8E44AD")
+
+min_area_restaurants <- 3   # an area needs this many restaurants to be compared
+final_system <- "ZIP/ZCTA"  # defended in Step 6
+```
+
+```{r}
+#| label: packages
+
+library(tidyverse)
+library(sf)
+library(tigris)
+library(scales)
+library(viridis)
+library(knitr)
+
+options(tigris_use_cache = TRUE)
+crs_proj <- 26915   # UTM zone 15N (meters): accurate areas and joins for New Orleans
+
+dir.create("figures", showWarnings = FALSE)
+dir.create("tables", showWarnings = FALSE)
+dir.create("data/boundaries", recursive = TRUE, showWarnings = FALSE)
+theme_set(theme_minimal(base_size = 12))
+
+save_fig <- function(plot, name, width = 8, height = 6) {
+  ggsave(file.path("figures", name), plot, width = width, height = height, dpi = 200, bg = "white")
+  plot
+}
+fmt <- function(x, digits = 2) formatC(x, format = "f", digits = digits)
+```
+
+## Starting point (from Steps 1–4)
+
+**Research question:** *Where can someone find the best Chinese, Vietnamese, and Japanese food in New Orleans, and which part of the city is best for finding it?*
+
+New Orleans is known for Creole and Cajun cooking, but it also has a large East Asian and Southeast Asian food scene, including one of the largest Vietnamese communities in the United States. The three cuisines belong together because they are the three largest Asian restaurant categories in the city, they compete for the same "let's get Asian food" decision, and some restaurants are tagged with more than one of them.
+
+```{r}
+#| label: setup-data
+
+business <- readRDS(business_rds)
+business$attributes <- NULL   # nested columns not needed here
+business$hours <- NULL
+business <- as_tibble(business)
+if (!"is_open" %in% names(business)) business$is_open <- 1L
+
+nola <- business |>
+  filter(state == "LA",
+         str_to_title(str_squish(city)) == "New Orleans",
+         !is.na(categories),
+         str_detect(categories, regex("Restaurants", ignore_case = TRUE))) |>
+  mutate(business_name = str_squish(name),
+         postal_code   = str_sub(na_if(postal_code, ""), 1, 5)) |>
+  distinct(business_id, .keep_all = TRUE)
+
+cat_long <- nola |>
+  select(business_id, categories) |>
+  separate_rows(categories, sep = ",") |>
+  mutate(category = str_to_lower(str_squish(categories))) |>
+  filter(category != "") |>
+  distinct(business_id, category)
+
+# One row per restaurant-cuisine pair (a restaurant tagged two cuisines appears twice)
+cuisine_long <- cat_long |>
+  filter(category %in% cuisines) |>
+  transmute(business_id, cuisine = str_to_title(category))
+
+selected <- nola |>
+  inner_join(
+    cuisine_long |>
+      group_by(business_id) |>
+      summarise(n_cuisines = n(),
+                cuisine_list = paste(sort(cuisine), collapse = " + "), .groups = "drop"),
+    by = "business_id"
+  ) |>
+  mutate(cuisine = if_else(n_cuisines > 1, "Mixed", cuisine_list))
+
+tibble(
+  Measure = c("New Orleans restaurants (Yelp city label)", "Chinese, Vietnamese, or Japanese",
+              "…still open in the Yelp snapshot", "…tagged with two of the cuisines", "Different ZIP codes"),
+  Value = c(nrow(nola), nrow(selected), sum(selected$is_open == 1),
+            sum(selected$n_cuisines > 1), n_distinct(selected$postal_code, na.rm = TRUE))
+) |> kable(format.args = list(big.mark = ","), caption = "The restaurant group")
+
+selected |>
+  count(`Cuisine label` = cuisine_list, name = "Restaurants", sort = TRUE) |>
+  kable(caption = "How restaurants are tagged (restaurants with two cuisines are labeled 'Mixed' on maps)")
+```
+
+```{r}
+#| label: cooccur-chart
+#| fig-height: 5
+
+cooccur <- cat_long |>
+  semi_join(selected, by = "business_id") |>
+  filter(!category %in% c("restaurants", "food", cuisines)) |>
+  count(category, sort = TRUE) |>
+  slice_head(n = 12) |>
+  mutate(category = fct_reorder(str_to_title(category), n))
+
+cooccur_chart <- ggplot(cooccur, aes(n, category)) +
+  geom_col(fill = "grey45") +
+  labs(title = "What else are these restaurants tagged as?",
+       subtitle = "Most common other categories among Chinese, Vietnamese, and Japanese restaurants",
+       x = "Restaurants", y = NULL)
+
+save_fig(cooccur_chart, "category_cooccurrence.png", height = 5)
+```
+
+## Step 5: Establish the official New Orleans boundary
+
+Yelp's `city` field is typed text from each business's mailing address. A **spatial join** provides an independent check: each restaurant's latitude/longitude point is matched to the U.S. Census place polygon that contains it (`st_within`).
+
+```{r}
+#| label: places
+
+la_places <- tigris::places(state = "LA", cb = TRUE, year = 2024, class = "sf") |>
+  st_transform(crs_proj) |>
+  st_make_valid()
+
+nola_boundary <- la_places |> filter(NAME == "New Orleans")
+
+restaurant_points <- nola |>
+  filter(!is.na(latitude), !is.na(longitude)) |>
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE) |>
+  st_transform(crs_proj) |>
+  st_join(la_places |> select(place_name = NAME), join = st_within, left = TRUE) |>
+  distinct(business_id, .keep_all = TRUE) |>
+  mutate(place_name  = replace_na(place_name, "Outside any Census place"),
+         inside_city = place_name == "New Orleans")
+
+restaurant_points |>
+  st_drop_geometry() |>
+  count(`Census place` = place_name, name = "Restaurants", sort = TRUE) |>
+  kable(caption = "All restaurants Yelp labels 'New Orleans': which Census place are they actually in?")
+```
+
+```{r}
+#| label: inside-outside-chart
+#| fig-height: 4
+
+asian_points <- restaurant_points |>
+  inner_join(select(selected, business_id, cuisine, cuisine_list), by = "business_id")
+
+inside_chart <- bind_rows(
+  st_drop_geometry(restaurant_points) |> mutate(group = "All restaurants"),
+  st_drop_geometry(asian_points) |> mutate(group = "Chinese / Vietnamese / Japanese")
+) |>
+  count(group, inside_city) |>
+  group_by(group) |>
+  mutate(share = n / sum(n)) |>
+  ggplot(aes(share, group, fill = inside_city)) +
+  geom_col() +
+  geom_text(aes(label = n), position = position_stack(vjust = 0.5), color = "white", fontface = "bold") +
+  scale_x_continuous(labels = percent) +
+  scale_fill_manual(values = c(`TRUE` = "#2E86C1", `FALSE` = "#C0392B"),
+                    labels = c(`TRUE` = "Inside city boundary", `FALSE` = "Outside")) +
+  labs(title = "How many 'New Orleans' restaurants are really inside the city?",
+       x = "Share of restaurants", y = NULL, fill = NULL) +
+  theme(legend.position = "top")
+
+save_fig(inside_chart, "step5_inside_outside.png", height = 4)
+```
+
+```{r}
+#| label: mismatches
+
+outside_tbl <- asian_points |>
+  st_drop_geometry() |>
+  filter(!inside_city) |>
+  select(Restaurant = business_name, Cuisine = cuisine_list, Address = address,
+         ZIP = postal_code, `Census place` = place_name, Stars = stars, Reviews = review_count)
+
+if (nrow(outside_tbl) == 0) {
+  cat("All selected restaurants are inside the New Orleans boundary.")
+} else {
+  kable(outside_tbl, caption = "Selected restaurants labeled 'New Orleans' but located outside the city")
+}
+
+asian_points |>
+  st_drop_geometry() |>
+  count(inside_city, cuisine) |>
+  pivot_wider(names_from = inside_city, values_from = n, values_fill = 0) |>
+  rename(Cuisine = cuisine, any_of(c(Inside = "TRUE", Outside = "FALSE"))) |>
+  kable(caption = "Inside vs. outside the city, by cuisine")
+```
+
+**What the mismatches mean:** the U.S. Postal Service, not city limits, decides the city name on a mailing address. Businesses in parts of Jefferson Parish (such as Metairie and Harahan, ZIP codes 70121 and 70123) receive "New Orleans" addresses even though they are outside the city. These restaurants are **excluded** from the analysis, because the question is about New Orleans and they would fall outside every city-based boundary in Step 6.
+
+```{r}
+#| label: analysis-set
+
+analysis_points <- asian_points |> filter(inside_city)
+```
+
+The analysis set is **`r nrow(analysis_points)`** restaurants inside the city boundary (down from `r nrow(asian_points)`).
+
+```{r}
+#| label: boundary-map
+#| fig-height: 7
+
+boundary_map <- ggplot() +
+  geom_sf(data = nola_boundary, fill = "grey96", color = "grey35") +
+  geom_sf(data = filter(restaurant_points, inside_city), color = "grey80", size = 0.4) +
+  geom_sf(data = filter(asian_points, !inside_city), shape = 4, color = "black", size = 2.5) +
+  geom_sf(data = analysis_points, aes(color = cuisine), size = 2.2, alpha = 0.9) +
+  scale_color_manual(values = cuisine_colors) +
+  labs(title = "Chinese, Vietnamese, and Japanese restaurants and the New Orleans boundary",
+       subtitle = "Grey dots: all other restaurants in the city. X: labeled New Orleans but outside the city (excluded)",
+       color = NULL) +
+  theme_void() +
+  theme(plot.title = element_text(face = "bold"), legend.position = "bottom")
+
+save_fig(boundary_map, "new_orleans_boundary_map.png", height = 7)
+```
+
+## Step 6: Choose and defend a geographic system
+
+Someone deciding where to eat thinks in terms of *parts of town*: "Is it worth driving out to the East for pho, or should we stay downtown?" The geographic system should therefore divide the city into areas that (1) a general reader recognizes and (2) each contain enough restaurants to compare. Three systems are tested:
+
+- **ZIP Code Tabulation Areas (ZCTAs):** Census versions of ZIP codes, clipped to the city boundary.
+- **Census tracts:** small statistical areas designed for population data.
+- **Neighborhood Statistical Areas (NSAs):** the City of New Orleans' official neighborhoods (Data.NOLA.gov).
+
+```{r}
+#| label: boundaries
+
+clip_to_city <- function(b) {
+  b <- b |> st_transform(crs_proj) |> st_make_valid()
+  b <- suppressWarnings(st_intersection(b, st_geometry(nola_boundary)))
+  b <- suppressWarnings(st_collection_extract(b, "POLYGON"))
+  b <- b |> group_by(area_name) |> summarise(.groups = "drop")
+  b$area_km2 <- as.numeric(st_area(b)) / 1e6
+  filter(b, area_km2 > 0.25)   # drop slivers along the city edge
+}
+
+pick_col <- function(df, candidates) {
+  hit <- intersect(candidates, names(df))
+  if (length(hit) == 0) stop("None of these columns found: ", paste(candidates, collapse = ", "))
+  hit[1]
+}
+
+# ZCTAs (New Orleans ZIPs start with 701)
+zcta_raw <- tigris::zctas(year = 2020, cb = TRUE, starts_with = "701", class = "sf")
+zcta_areas <- zcta_raw |>
+  transmute(area_name = .data[[pick_col(zcta_raw, c("ZCTA5CE20", "GEOID20", "ZCTA5CE10", "GEOID"))]]) |>
+  clip_to_city()
+
+# Census tracts (Orleans Parish = City of New Orleans)
+tract_raw <- tigris::tracts(state = "LA", county = "Orleans", year = 2024, cb = TRUE, class = "sf")
+tract_areas <- tract_raw |>
+  transmute(area_name = .data[[pick_col(tract_raw, c("NAMELSAD", "NAME", "GEOID"))]]) |>
+  clip_to_city()
+
+# Neighborhood Statistical Areas: downloaded once, then read from disk
+nsa_file <- "data/boundaries/neighborhood_statistical_areas.geojson"
+nsa_urls <- c(
+  "https://maps.nola.gov/server/rest/services/Reference/Reference_Layers/MapServer/0/query?where=1%3D1&outFields=*&outSR=4326&f=geojson",
+  "https://data.nola.gov/api/v3/views/exvn-jeh2/query.geojson?accessType=DOWNLOAD",
+  "https://data.nola.gov/api/geospatial/exvn-jeh2?method=export&format=GeoJSON"
+)
+read_nsa <- function(path) { x <- st_read(path, quiet = TRUE); if (nrow(x) < 10) stop("bad file"); x }
+
+nsa_raw <- if (file.exists(nsa_file)) tryCatch(read_nsa(nsa_file), error = \(e) NULL) else NULL
+for (u in nsa_urls) {
+  if (!is.null(nsa_raw)) break
+  nsa_raw <- tryCatch({ download.file(u, nsa_file, mode = "wb", quiet = TRUE); read_nsa(nsa_file) },
+                      error = \(e) NULL)
+}
+
+nsa_ok <- !is.null(nsa_raw)
+if (nsa_ok) {
+  nsa_areas <- nsa_raw |>
+    transmute(area_name = str_to_title(.data[[pick_col(nsa_raw, c("GNOCDC_LAB", "gnocdc_lab", "LUP_LAB",
+                                                                   "lup_lab", "NAME", "name"))]])) |>
+    clip_to_city()
+}
+
+geo_systems <- list(`ZIP/ZCTA` = zcta_areas, `Census tract` = tract_areas)
+if (nsa_ok) geo_systems[["Neighborhood Statistical Area"]] <- nsa_areas
+```
+
+```{r}
+#| label: nsa-note
+#| echo: false
+#| results: asis
+if (!nsa_ok) {
+  cat("::: {.callout-warning}\nThe neighborhood boundary file could not be downloaded, so this version compares ZIP codes and census tracts only. ",
+      "Download the GeoJSON from <https://data.nola.gov/d/exvn-jeh2>, save it as `", nsa_file, "`, and render again.\n:::\n", sep = "")
+}
+```
+
+### Spatial joins and comparison table
+
+```{r}
+#| label: assign
+
+assignments <- imap(geo_systems, \(areas, sys) {
+  analysis_points |>
+    st_join(select(areas, area_name), join = st_within, left = TRUE) |>
+    distinct(business_id, .keep_all = TRUE) |>
+    st_drop_geometry() |>
+    mutate(system = sys)
+})
+
+area_counts <- imap(geo_systems, \(areas, sys) {
+  areas |>
+    st_drop_geometry() |>
+    select(area_name) |>
+    left_join(count(filter(assignments[[sys]], !is.na(area_name)), area_name, name = "restaurants"),
+              by = "area_name") |>
+    mutate(restaurants = replace_na(restaurants, 0L), system = sys)
+}) |> bind_rows()
+
+comparison <- area_counts |>
+  group_by(`Geographic system` = system) |>
+  summarise(
+    `Number of areas`           = n(),
+    `Areas with 1+ restaurants` = sum(restaurants >= 1),
+    `Areas with 3+ restaurants` = sum(restaurants >= min_area_restaurants),
+    `Smallest area count (non-empty)` = min(restaurants[restaurants > 0]),
+    `Median per area`           = median(restaurants),
+    `Largest area count`        = max(restaurants),
+    `Share in comparable areas` = sum(restaurants[restaurants >= min_area_restaurants]) / nrow(analysis_points),
+    .groups = "drop"
+  ) |>
+  left_join(
+    bind_rows(assignments) |>
+      group_by(`Geographic system` = system) |>
+      summarise(`Restaurants assigned` = sum(!is.na(area_name)),
+                `Unmatched restaurants` = sum(is.na(area_name)), .groups = "drop"),
+    by = "Geographic system"
+  ) |>
+  relocate(`Restaurants assigned`, `Unmatched restaurants`, .after = `Number of areas`)
+
+write_csv(comparison, "tables/geography_comparison.csv")
+comparison |>
+  mutate(`Share in comparable areas` = percent(`Share in comparable areas`, accuracy = 1)) |>
+  kable(caption = "Comparison of geographic systems (restaurants inside New Orleans)")
+```
+
+The last column is the share of restaurants that sit in an area with at least `r min_area_restaurants` restaurants, where an area average means something.
+
+```{r}
+#| label: geo-compare-chart
+#| fig-height: 5
+
+geo_compare_chart <- area_counts |>
+  ggplot(aes(system, restaurants)) +
+  geom_boxplot(outlier.shape = NA, fill = "grey92") +
+  geom_jitter(width = 0.22, height = 0.08, alpha = 0.55, color = "#C0392B") +
+  geom_hline(yintercept = min_area_restaurants, linetype = "dashed", color = "grey40") +
+  annotate("text", x = 0.55, y = min_area_restaurants, label = "enough to compare",
+           hjust = 0, vjust = -0.6, size = 3.2, color = "grey30") +
+  labs(title = "How many of the selected restaurants does each area contain?",
+       subtitle = "Each dot is one area (areas with zero restaurants included)",
+       x = NULL, y = "Restaurants in area")
+
+save_fig(geo_compare_chart, "geography_comparison.png", height = 5)
+```
+
+### Maps of each system
+
+```{r}
+#| label: system-maps
+#| fig-height: 6
+
+system_maps <- imap(geo_systems, \(areas, sys) {
+  p <- areas |>
+    left_join(filter(area_counts, system == sys) |> select(area_name, restaurants), by = "area_name") |>
+    ggplot() +
+    geom_sf(aes(fill = restaurants), color = "white", linewidth = 0.2) +
+    geom_sf(data = analysis_points, size = 0.9, color = "black", alpha = 0.6) +
+    scale_fill_viridis_c(option = "rocket", direction = -1, name = "Restaurants") +
+    labs(title = sys, subtitle = paste(nrow(areas), "areas")) +
+    theme_void()
+  save_fig(p, paste0("map_", str_replace_all(str_to_lower(sys), "[^a-z]+", "_"), ".png"), height = 6)
+})
+walk(system_maps, print)
+```
+
+### Ratings by area in each system
+
+```{r}
+#| label: area-ratings
+
+area_ratings <- bind_rows(assignments) |>
+  filter(!is.na(area_name)) |>
+  group_by(system, area_name) |>
+  summarise(
+    restaurants           = n(),
+    average_stars         = mean(stars),
+    review_weighted_stars = weighted.mean(stars, review_count),
+    total_reviews         = sum(review_count),
+    .groups = "drop"
+  )
+
+area_ratings |>
+  filter(restaurants >= min_area_restaurants) |>
+  group_by(`Geographic system` = system) |>
+  summarise(`Comparable areas` = n(),
+            `Highest review-weighted stars` = round(max(review_weighted_stars), 2),
+            `Lowest review-weighted stars`  = round(min(review_weighted_stars), 2),
+            .groups = "drop") |>
+  kable(caption = paste0("Ratings across comparable areas (", min_area_restaurants, "+ restaurants) in each system"))
+```
+
+**Review-weighted stars** give a restaurant with 500 reviews more influence than one with 5, so a single lightly reviewed restaurant cannot set an area's score.
+
+### Decision: ZIP code areas, labeled with neighborhood names
+
+```{r}
+#| label: decision-values
+#| include: false
+
+cmp <- \(sys, col) {
+  v <- comparison[[col]][comparison$`Geographic system` == sys]
+  if (length(v) == 0) return("not available")
+  if (col == "Share in comparable areas") percent(v, accuracy = 1) else v
+}
+```
+
+| Criterion | ZIP/ZCTA | Census tract | Neighborhood Statistical Area |
+|---|---|---|---|
+| Matches the question ("what part of town?") | Good: a part of town | Poor: blocks, not destinations | Best: named neighborhoods |
+| Understandable to a general reader | Good: ZIPs appear on every address and map app | Poor: tract numbers mean nothing to diners | Best: local names |
+| Areas with 3+ restaurants | `r cmp("ZIP/ZCTA", "Areas with 3+ restaurants")` | `r cmp("Census tract", "Areas with 3+ restaurants")` | `r cmp("Neighborhood Statistical Area", "Areas with 3+ restaurants")` |
+| Share of restaurants in comparable areas | `r cmp("ZIP/ZCTA", "Share in comparable areas")` | `r cmp("Census tract", "Share in comparable areas")` | `r cmp("Neighborhood Statistical Area", "Share in comparable areas")` |
+| Unmatched restaurants | `r cmp("ZIP/ZCTA", "Unmatched restaurants")` | `r cmp("Census tract", "Unmatched restaurants")` | `r cmp("Neighborhood Statistical Area", "Unmatched restaurants")` |
+| Source and documentation | Census TIGER/Line | Census TIGER/Line | City of New Orleans GIS |
+
+**Selected system: `r final_system`.** With `r nrow(analysis_points)` restaurants split across three cuisines, the areas need to be large enough that each holds several restaurants. Neighborhoods would be the most natural answer for a diner, but New Orleans has about 70 of them, so most hold zero or one of these restaurants, and the "best neighborhood" would just be wherever one good restaurant happens to sit. Census tracts are even thinner and mean nothing to a diner. ZIP code areas keep the largest share of restaurants in areas big enough to compare, and people already use ZIP codes and parts of town when searching for food.
+
+**Making ZIPs readable:** "70130" tells a reader little, so each ZIP is labeled with the neighborhoods it overlaps most. This keeps ZIP-level statistics but adds neighborhood meaning.
+
+**What this choice hides:** ZIP codes are postal routes, not communities. 70130 runs from the Warehouse District to the edge of the French Quarter, and the New Orleans East ZIPs cover large, mostly suburban areas, so an average can blend very different blocks. One or two strong restaurants can also lift a small ZIP's average. The system was chosen for **counts and readability, not because it produced the most interesting ratings.**
+
+```{r}
+#| label: zip-labels
+
+fallback_names <- c(
+  "70112" = "CBD / Tulane-Gravier", "70113" = "Central City / Lower Garden District",
+  "70114" = "Algiers", "70115" = "Uptown / Garden District", "70116" = "French Quarter / Marigny / Tremé",
+  "70117" = "Bywater / St. Roch / Lower 9th Ward", "70118" = "Uptown / Carrollton", "70119" = "Mid-City",
+  "70122" = "Gentilly", "70124" = "Lakeview", "70125" = "Broadmoor / Freret",
+  "70126" = "New Orleans East / Gentilly", "70127" = "New Orleans East", "70128" = "New Orleans East",
+  "70129" = "Village de l'Est / Venetian Isles", "70130" = "CBD / Warehouse District / French Quarter",
+  "70131" = "Algiers / Lower Coast"
+)
+
+zip_names <- if (nsa_ok) {
+  suppressWarnings(st_intersection(select(zcta_areas, zip = area_name), select(nsa_areas, nbhd = area_name))) |>
+    mutate(overlap = as.numeric(st_area(geometry))) |>
+    st_drop_geometry() |>
+    group_by(zip) |>
+    slice_max(overlap, n = 2, with_ties = FALSE) |>
+    summarise(neighborhoods = paste(nbhd, collapse = " / "), .groups = "drop")
+} else {
+  tibble(zip = names(fallback_names), neighborhoods = unname(fallback_names))
+}
+
+zip_assign <- assignments[["ZIP/ZCTA"]] |>
+  select(business_id, zip = area_name) |>
+  left_join(zip_names, by = "zip") |>
+  mutate(zip_label = paste0(zip, " (", replace_na(neighborhoods, "unnamed"), ")"))
+
+zip_table <- area_ratings |>
+  filter(system == "ZIP/ZCTA") |>
+  left_join(
+    analysis_points |> st_drop_geometry() |> select(business_id, cuisine) |>
+      inner_join(zip_assign, by = "business_id") |>
+      count(zip, zip_label, cuisine) |>
+      pivot_wider(names_from = cuisine, values_from = n, values_fill = 0),
+    by = c("area_name" = "zip")
+  ) |>
+  mutate(comparable = restaurants >= min_area_restaurants) |>
+  arrange(desc(comparable), desc(review_weighted_stars))
+
+zip_table |>
+  transmute(ZIP = zip_label, Restaurants = restaurants,
+            across(any_of(c("Chinese", "Vietnamese", "Japanese", "Mixed"))),
+            `Average stars` = round(average_stars, 2),
+            `Review-weighted stars` = round(review_weighted_stars, 2),
+            `Total reviews` = total_reviews,
+            Comparable = if_else(comparable, "✓", "too few")) |>
+  kable(caption = "Restaurants by ZIP code area (inside New Orleans)")
+
+write_csv(zip_table, "tables/zip_area_ratings.csv")
+```
+
+### Where each cuisine is found
+
+```{r}
+#| label: cuisine-mix
+#| fig-height: 6
+
+mix_chart <- analysis_points |>
+  st_drop_geometry() |>
+  select(business_id, cuisine) |>
+  inner_join(zip_assign, by = "business_id") |>
+  add_count(zip_label, name = "zip_total") |>
+  filter(zip_total >= min_area_restaurants) |>
+  mutate(zip_label = fct_reorder(zip_label, zip_total)) |>
+  ggplot(aes(y = zip_label, fill = cuisine)) +
+  geom_bar() +
+  scale_fill_manual(values = cuisine_colors) +
+  labs(title = "Cuisine mix by ZIP code area",
+       subtitle = paste0("ZIP areas with ", min_area_restaurants, "+ restaurants"),
+       x = "Restaurants", y = NULL, fill = NULL) +
+  theme(legend.position = "top")
+
+save_fig(mix_chart, "cuisine_mix_by_zip.png", height = 6)
+```
+
+```{r}
+#| label: cuisine-maps
+#| fig-height: 5
+#| fig-width: 11
+
+cuisine_points <- analysis_points |>
+  select(business_id, stars) |>
+  inner_join(cuisine_long, by = "business_id")   # restaurants with two cuisines appear in both panels
+
+zoom_bb <- st_bbox(st_buffer(st_union(analysis_points), 2500))
+
+cuisine_maps <- ggplot() +
+  geom_sf(data = zcta_areas, fill = "grey95", color = "grey70", linewidth = 0.3) +
+  geom_sf(data = cuisine_points, aes(color = stars), size = 1.8) +
+  scale_color_viridis_c(option = "C", limits = c(1, 5)) +
+  facet_wrap(~ cuisine) +
+  coord_sf(xlim = zoom_bb[c("xmin", "xmax")], ylim = zoom_bb[c("ymin", "ymax")], expand = FALSE) +
+  labs(title = "Each cuisine has its own geography",
+       subtitle = "Restaurants by cuisine over ZIP code boundaries, colored by Yelp stars",
+       color = "Stars") +
+  theme_void() +
+  theme(strip.text = element_text(face = "bold", size = 12), plot.title = element_text(face = "bold"))
+
+save_fig(cuisine_maps, "cuisine_maps.png", width = 11, height = 5)
+```
+
+```{r}
+#| label: best-zip-per-cuisine
+
+cuisine_zip <- cuisine_points |>
+  st_drop_geometry() |>
+  inner_join(zip_assign, by = "business_id") |>
+  inner_join(st_drop_geometry(analysis_points) |> select(business_id, review_count), by = "business_id") |>
+  group_by(cuisine, zip_label) |>
+  summarise(restaurants = n(), review_weighted_stars = weighted.mean(stars, review_count), .groups = "drop")
+
+cuisine_zip |>
+  group_by(cuisine) |>
+  mutate(min_needed = if (any(restaurants >= min_area_restaurants)) min_area_restaurants else 2) |>
+  filter(restaurants >= min_needed) |>
+  summarise(
+    `ZIP areas compared` = n(),
+    `Most restaurants`   = zip_label[which.max(restaurants)],
+    `Highest rated`      = zip_label[which.max(review_weighted_stars)],
+    `Its review-weighted stars` = round(max(review_weighted_stars), 2),
+    `Minimum restaurants per area` = first(min_needed),
+    .groups = "drop"
+  ) |>
+  rename(Cuisine = cuisine) |>
+  kable(caption = "For each cuisine: where the most restaurants are vs. where the best-rated ones are")
+```
+
+### Best areas overall
+
+```{r}
+#| label: zip-chart
+#| fig-height: 6
+
+zip_chart <- zip_table |>
+  filter(comparable) |>
+  mutate(zip_label = fct_reorder(zip_label, review_weighted_stars)) |>
+  ggplot(aes(review_weighted_stars, zip_label)) +
+  geom_segment(aes(x = 1, xend = review_weighted_stars, yend = zip_label), color = "grey80") +
+  geom_point(aes(size = restaurants), color = "#C0392B") +
+  geom_text(aes(label = paste0(restaurants, " restaurants")), hjust = -0.3, size = 3, color = "grey30") +
+  scale_x_continuous(limits = c(1, 5.5), breaks = 1:5) +
+  labs(title = "Which parts of New Orleans have the best-rated Chinese, Vietnamese, and Japanese food?",
+       subtitle = paste0("ZIP areas with ", min_area_restaurants, "+ restaurants; review-weighted Yelp stars"),
+       x = "Review-weighted stars", y = NULL, size = "Restaurants")
+
+save_fig(zip_chart, "ratings_by_zip.png", height = 6)
+```
+
+```{r}
+#| label: final-map
+#| fig-height: 8
+
+final_map_data <- zcta_areas |>
+  left_join(select(zip_table, area_name, review_weighted_stars, comparable), by = "area_name") |>
+  mutate(map_value = if_else(comparable %in% TRUE, review_weighted_stars, NA_real_))
+
+final_map <- ggplot() +
+  geom_sf(data = final_map_data, aes(fill = map_value), color = "white", linewidth = 0.5) +
+  geom_sf_text(data = final_map_data, aes(label = area_name), size = 2.6, color = "grey15") +
+  geom_sf(data = analysis_points, aes(color = cuisine), size = 1.6) +
+  scale_fill_viridis_c(option = "mako", direction = -1, begin = 0.1, end = 0.7, na.value = "grey93",
+                       name = "Review-weighted\nstars") +
+  scale_color_manual(values = cuisine_colors, name = NULL) +
+  coord_sf(xlim = zoom_bb[c("xmin", "xmax")], ylim = zoom_bb[c("ymin", "ymax")], expand = FALSE) +
+  labs(title = "Chinese, Vietnamese, and Japanese food across New Orleans ZIP code areas",
+       subtitle = paste0("Shaded: review-weighted stars (grey = fewer than ", min_area_restaurants, " restaurants)"),
+       caption = "Data: Yelp Open Dataset; boundaries: U.S. Census TIGER/Line ZCTAs clipped to the New Orleans city limit") +
+  theme_void() +
+  theme(plot.title = element_text(face = "bold"))
+
+save_fig(final_map, "final_zip_map.png", width = 9, height = 8)
+```
+
+### Preliminary answer
+
+```{r}
+#| label: prelim
+#| include: false
+best_zip  <- zip_table |> filter(comparable) |> slice_max(review_weighted_stars, n = 1, with_ties = FALSE)
+most_zip  <- zip_table |> slice_max(restaurants, n = 1, with_ties = FALSE)
+```
+
+Among ZIP areas with at least `r min_area_restaurants` restaurants, **`r best_zip$zip_label`** has the highest review-weighted rating (`r fmt(best_zip$review_weighted_stars)` stars across `r best_zip$restaurants` restaurants). **`r most_zip$zip_label`** has the most restaurants (`r most_zip$restaurants`). Step 7 tests whether this holds after adjusting for reviewer habits.
+
