@@ -1,0 +1,19 @@
+category,restaurants,cuisine,selected
+chinese,69,Chinese,TRUE
+vietnamese,57,Vietnamese,TRUE
+japanese,54,Japanese,TRUE
+asian fusion,53,NA,FALSE
+sushi bars,50,Japanese,TRUE
+thai,25,NA,FALSE
+noodles,15,NA,FALSE
+ramen,11,Japanese,TRUE
+poke,9,NA,FALSE
+bubble tea,6,NA,FALSE
+korean,6,NA,FALSE
+dim sum,4,Chinese,TRUE
+taiwanese,3,NA,FALSE
+pan asian,2,NA,FALSE
+szechuan,2,Chinese,TRUE
+teppanyaki,2,Japanese,TRUE
+japanese curry,1,NA,FALSE
+shanghainese,1,Chinese,TRUE

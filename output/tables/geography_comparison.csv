@@ -1,0 +1,4 @@
+geographic_system,number_of_areas,areas_with_restaurants,restaurants_assigned,assigned_by_nearest,unmatched_restaurants,smallest_area_count,median_area_count,largest_area_count,areas_rankable,median_area_km2,spread_of_area_mean_stars
+Neighborhood Statistical Area,70,45,171,0,0,1,2,30,18,2.4,0.25
+ZIP/ZCTA,18,17,171,1,0,2,6,38,14,13.695,0.19
+Census tract,182,70,171,0,0,1,1.5,30,18,0.795,0.4

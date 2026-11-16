@@ -1,0 +1,149 @@
+<script>
+// Ink & Lacquer page motion: elements fade up and headings draw their brush
+// stroke as they scroll into view. Nothing is hidden unless this script runs,
+// and nothing moves for visitors who ask their device for reduced motion.
+document.addEventListener("DOMContentLoaded", function () {
+  if (!("IntersectionObserver" in window)) return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var targets = document.querySelectorAll(
+    "main h2, main h3, main blockquote, main figure, main .cell-output-display, main p > img"
+  );
+  targets.forEach(function (el) { el.classList.add("ink-reveal"); });
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add("is-visible"); io.unobserve(e.target); }
+    });
+  }, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
+  targets.forEach(function (el) { io.observe(el); });
+});
+</script>
+<script>
+// ---- Interactive top-10 map: hover tooltip + full restaurant card -----------
+(function () {
+  var COLORS = { Chinese: "#C03A2B", Japanese: "#3A5FB0", Vietnamese: "#1F8A5E", Multiple: "#9E6B12" };
+  var GLYPH  = { Chinese: "●", Japanese: "■", Vietnamese: "▲", Multiple: "◆" };
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function num(x, d) { return Number(x).toLocaleString("en-US", { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 }); }
+  function signed(x) { var v = Number(x); return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2); }
+  function byRank(r) { return (window.INK_TOP10 || []).filter(function (d) { return d.rank == r; })[0]; }
+
+  function starBar(avg) {
+    var pct = Math.max(0, Math.min(100, (Number(avg) / 5) * 100));
+    return '<span class="ink-stars" aria-label="' + num(avg, 2) + ' out of 5 stars">' +
+           '<span class="ink-stars-fill" style="width:' + pct.toFixed(1) + '%"></span></span>';
+  }
+
+  function card(d) {
+    var color = COLORS[d.cuisine_group] || "#1E1C1A";
+    var counts = [5, 4, 3, 2, 1].map(function (k) { return Number(d["stars_" + k] || 0); });
+    var maxc = Math.max.apply(null, counts.concat([1]));
+    var dist = [5, 4, 3, 2, 1].map(function (k, i) {
+      return '<div class="ink-dist-row"><span class="ink-dist-k">' + k + ' ★</span>' +
+             '<span class="ink-dist-track"><span class="ink-dist-bar" style="width:' +
+             (100 * counts[i] / maxc).toFixed(1) + '%;background:' + color + '"></span></span>' +
+             '<span class="ink-dist-n">' + num(counts[i]) + '</span></div>';
+    }).join("");
+    var mood = Number(d.avg_normalized) >= 0 ? "higher" : "lower";
+    var story =
+      "Ranked <b>#" + d.rank_raw + "</b> of " + d.restaurants_ranked + " by raw stars and <b>#" +
+      d.rank_adjusted + "</b> after adjusting for reviewer habits. Experienced reviewers rated it <b>" +
+      Math.abs(Number(d.avg_normalized)).toFixed(2) + " stars " + mood + "</b> than they usually rate these cuisines.";
+    var query = encodeURIComponent(d.restaurant + ", " + d.address + ", New Orleans, LA " + (d.postal_code || ""));
+    var open = d.is_open == 1 ? '<span class="ink-status is-open">Open in the Yelp snapshot</span>'
+                              : '<span class="ink-status">Closed in the Yelp snapshot</span>';
+    return '' +
+      '<article class="ink-card" style="--accent:' + color + '" role="document">' +
+        '<div class="ink-card-left">' +
+          '<div class="ink-card-seal">' + d.rank + '</div>' +
+          '<h2 class="ink-card-name" id="ink-card-title">' + esc(d.restaurant) + '</h2>' +
+          '<p class="ink-card-cuisine"><span style="color:' + color + '">' + (GLYPH[d.cuisine_group] || "") +
+            '</span> ' + esc(d.cuisine) + '</p>' +
+          '<p class="ink-card-area">' + esc(d.area) + '</p>' +
+          '<p class="ink-card-address">' + esc(d.address) + (d.postal_code ? ", " + esc(d.postal_code) : "") + '</p>' +
+          open +
+          '<p><a class="ink-card-link" href="https://www.google.com/maps/search/?api=1&query=' + query +
+            '" target="_blank" rel="noopener">Open in Google Maps ↗</a></p>' +
+        '</div>' +
+        '<div class="ink-card-right">' +
+          '<div class="ink-stats">' +
+            '<div class="ink-stat"><div class="ink-stat-v">' + num(d.avg_stars, 2) + '</div>' + starBar(d.avg_stars) +
+              '<div class="ink-stat-l">average stars</div></div>' +
+            '<div class="ink-stat"><div class="ink-stat-v">' + num(d.reviews) + '</div><div class="ink-stat-l">Yelp reviews</div></div>' +
+            '<div class="ink-stat"><div class="ink-stat-v">' + signed(d.avg_normalized) + '</div>' +
+              '<div class="ink-stat-l">vs. reviewers’ usual rating</div></div>' +
+            '<div class="ink-stat"><div class="ink-stat-v">' + num(d.eligible_reviews) + '</div>' +
+              '<div class="ink-stat-l">reviews from experienced reviewers</div></div>' +
+          '</div>' +
+          '<h3 class="ink-card-h">How diners rated it</h3>' + dist +
+          '<h3 class="ink-card-h">Why it ranks here</h3><p class="ink-card-story">' + story + '</p>' +
+          '<p class="ink-card-years">On Yelp: first review ' + d.first_review_year + ', latest ' + d.last_review_year + '</p>' +
+        '</div>' +
+        '<p class="ink-card-hint">Click anywhere or press Esc to close</p>' +
+      '</article>';
+  }
+
+  var lastFocus = null, modal = null;
+  function openCard(rank) {
+    var d = byRank(rank); if (!d) return;
+    closeCard(true);
+    lastFocus = document.activeElement;
+    modal = document.createElement("div");
+    modal.className = "ink-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-labelledby", "ink-card-title");
+    modal.tabIndex = -1;
+    modal.innerHTML = card(d);
+    modal.addEventListener("click", function (e) { if (!e.target.closest("a")) closeCard(); });
+    document.body.appendChild(modal);
+    document.body.classList.add("ink-modal-open");
+    requestAnimationFrame(function () { modal.classList.add("is-open"); modal.focus(); });
+  }
+  function closeCard(instant) {
+    if (!modal) return;
+    var m = modal; modal = null;
+    document.body.classList.remove("ink-modal-open");
+    if (instant) { m.remove(); return; }
+    m.classList.remove("is-open");
+    setTimeout(function () { m.remove(); }, 320);
+    if (lastFocus) lastFocus.focus();
+  }
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeCard(); });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    var map = document.getElementById("ink-map");
+    if (!map || !window.INK_TOP10) return;
+    var tip = map.querySelector(".ink-tip");
+
+    function setHot(rank, on) {
+      document.querySelectorAll('[data-rank="' + rank + '"]').forEach(function (el) {
+        el.classList.toggle("is-hot", on);
+      });
+    }
+    function showTip(btn) {
+      var d = byRank(btn.dataset.rank); if (!d || !tip) return;
+      tip.innerHTML = '<span class="ink-tip-seal">' + d.rank + '</span><b>' + esc(d.restaurant) + '</b><br>' +
+        esc(d.cuisine) + ' &middot; &#9733; ' + num(d.avg_stars, 2) + ' &middot; ' + num(d.reviews) +
+        ' reviews<br><i>Click for details</i>';
+      tip.style.left = btn.style.left; tip.style.top = btn.style.top;
+      tip.classList.toggle("below", parseFloat(btn.style.top) < 30);
+      tip.classList.add("is-visible");
+    }
+    function hideTip() { if (tip) tip.classList.remove("is-visible"); }
+
+    document.querySelectorAll(".ink-hotspot, .ink-top10-item").forEach(function (btn) {
+      var r = btn.dataset.rank;
+      btn.addEventListener("click", function (e) { e.stopPropagation(); hideTip(); openCard(r); });
+      btn.addEventListener("mouseenter", function () { setHot(r, true); if (btn.classList.contains("ink-hotspot")) showTip(btn); });
+      btn.addEventListener("mouseleave", function () { setHot(r, false); hideTip(); });
+      btn.addEventListener("focus", function () { setHot(r, true); if (btn.classList.contains("ink-hotspot")) showTip(btn); });
+      btn.addEventListener("blur", function () { setHot(r, false); hideTip(); });
+    });
+  });
+})();
+</script>

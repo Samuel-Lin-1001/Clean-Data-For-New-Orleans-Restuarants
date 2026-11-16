@@ -1,0 +1,11 @@
+rank,restaurant,cuisine,cuisine_group,area,address,postal_code,reviews,avg_stars,eligible_reviews,avg_normalized,best_score,rank_raw,rank_adjusted,restaurants_ranked,is_open,first_review_year,last_review_year,stars_1,stars_2,stars_3,stars_4,stars_5,latitude,longitude,map_left_pct,map_top_pct
+1,Tito's Ceviche & Pisco,Japanese,Japanese,Uptown,5015 Magazine St,70115,221,4.72,47,0.49,0.984,3,7,96,1,2017,2022,2,5,2,35,177,29.920519,-90.1095214,20.467,74.368
+2,Nagomi,Japanese,Japanese,St. Claude,3214 Burgundy St,70117,24,4.96,11,0.84,0.984,1,2,96,1,2020,2021,0,0,0,1,23,29.9649826385,-90.0425713043,43.37,53.916
+3,Mister Mao,Chinese,Chinese,West Riverside,4501 Tchoupitoulas St,70115,29,4.66,10,0.68,0.932,4,3,96,1,2021,2021,1,0,1,4,23,29.9172216521,-90.102451183,22.968,75.766
+4,Singleton's Mini Mart,Vietnamese,Vietnamese,Black Pearl,7446 Garfield St,70118,91,4.53,20,0.48,0.921,8,11,96,1,2008,2022,1,3,5,20,62,29.9351614,-90.1324794,12.31,68.074
+5,Asuka Sushi & Hibachi,Japanese,Japanese,Gert Town,7912 Earhart Blvd,70125,316,4.4,58,0.39,0.911,14,16,96,1,2013,2021,10,8,27,71,200,29.9600836,-90.1134502,18.697,56.797
+6,Dong Phuong,Chinese + Vietnamese,Multiple,Village De Lest,14207 Chef Menteur Hwy,70129,423,4.33,100,0.49,0.905,22,9,96,1,2007,2022,19,13,30,108,253,30.0357777,-89.9149015,87.137,21.099
+7,Lilly's Cafe,Vietnamese,Vietnamese,Lower Garden District,1813 Magazine St,70130,797,4.35,123,0.42,0.9,20,14,96,1,2012,2022,29,36,58,181,493,29.932123,-90.0735046315,32.916,68.849
+8,Dian Xin,Chinese,Chinese,French Quarter,1218 Decatur St,70116,402,4.45,74,0.34,0.9,12,19,96,1,2019,2022,10,7,35,90,260,29.961033,-90.058881,37.721,55.837
+9,Poke-chan,Japanese,Japanese,St. Claude,2809 St Claude Ave,70117,138,4.52,41,0.32,0.889,9,21,96,1,2017,2022,4,2,4,36,92,29.9687579207,-90.0478478148,41.49,52.288
+10,Union Ramen,Japanese,Japanese,Lower Garden District,"1837 Magazine St, Ste B",70130,156,4.37,41,0.4,0.884,18,15,96,1,2020,2022,9,2,16,24,105,29.9317953,-90.0738372,32.804,68.998

@@ -1,0 +1,4 @@
+yelp_says_new_orleans,inside_official_nola,n,meaning
+FALSE,FALSE,177,Agree: not New Orleans
+TRUE,FALSE,13,"Yelp says New Orleans, point is outside the city"
+TRUE,TRUE,171,Agree: New Orleans

@@ -1,0 +1,5 @@
+step,seconds,rows,note
+read business JSON,12.9,150346,118.9 MB on disk
+Louisiana restaurants kept,13.7,3640,
+"stream review JSON, keep LA restaurant reviews",337.1,558340,"6,990,280 reviews scanned; 5.3 GB on disk"
+saved compressed .rds,378.8,558340,18.8 MB after xz compression

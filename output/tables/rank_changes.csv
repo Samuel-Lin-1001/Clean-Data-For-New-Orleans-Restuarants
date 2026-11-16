@@ -1,0 +1,11 @@
+restaurant,area,reviews,eligible_reviews,avg_stars,avg_normalized,rank_raw,rank_adjusted,rank_change
+Bullard Seafood and Grill,Little Woods,42,6,3.57,0.67,76,4,72
+Zhang Bistro,French Quarter,50,9,4.62,-0.28,7,69,-62
+Hangout Ramen,Leonidas,24,6,4.29,-0.43,29,81,-52
+Moon Wok,French Quarter,141,18,3.57,0.25,75,27,48
+Le's Baguette Banh Mi Cafe,Uptown,124,24,4.64,-0.01,5,51,-46
+Umi 2,Tall Timbers - Brechtel,105,21,4.33,-0.07,21,60,-39
+Frenchmen Grocery & Deli,Marigny,46,5,4.09,0.85,39,1,38
+New China,St. Thomas Dev,104,25,3.75,0.23,65,29,36
+Pho Tau Bay Restaurant,Central Business District,367,88,3.9,0.31,58,23,35
+Haiku Sushi,West Riverside,184,48,4.01,-0.41,46,80,-34

@@ -1,0 +1,66 @@
+category_1,category_2,restaurants_with_both
+japanese,sushi bars,32
+asian fusion,japanese,11
+asian fusion,sushi bars,11
+japanese,ramen,11
+asian fusion,chinese,10
+chinese,vietnamese,9
+asian fusion,vietnamese,7
+japanese,noodles,7
+chinese,noodles,6
+asian fusion,noodles,5
+japanese,poke,5
+asian fusion,thai,4
+chinese,dim sum,4
+noodles,vietnamese,4
+poke,sushi bars,4
+bubble tea,vietnamese,3
+chinese,thai,3
+ramen,sushi bars,3
+asian fusion,bubble tea,2
+asian fusion,pan asian,2
+asian fusion,ramen,2
+chinese,japanese,2
+chinese,sushi bars,2
+chinese,szechuan,2
+japanese,teppanyaki,2
+noodles,ramen,2
+noodles,sushi bars,2
+sushi bars,teppanyaki,2
+thai,vietnamese,2
+asian fusion,korean,1
+asian fusion,shanghainese,1
+bubble tea,japanese,1
+bubble tea,ramen,1
+bubble tea,sushi bars,1
+chinese,pan asian,1
+chinese,shanghainese,1
+chinese,taiwanese,1
+dim sum,noodles,1
+dim sum,szechuan,1
+dim sum,taiwanese,1
+dim sum,thai,1
+japanese,japanese curry,1
+japanese,pan asian,1
+japanese,shanghainese,1
+japanese,taiwanese,1
+japanese,thai,1
+japanese,vietnamese,1
+japanese curry,noodles,1
+japanese curry,ramen,1
+korean,vietnamese,1
+noodles,pan asian,1
+noodles,poke,1
+noodles,shanghainese,1
+noodles,szechuan,1
+noodles,taiwanese,1
+noodles,thai,1
+pan asian,shanghainese,1
+pan asian,thai,1
+pan asian,vietnamese,1
+poke,ramen,1
+ramen,teppanyaki,1
+ramen,vietnamese,1
+sushi bars,vietnamese,1
+szechuan,taiwanese,1
+taiwanese,thai,1

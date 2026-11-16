@@ -1,4 +1,21 @@
-.Rproj.user
+# Raw Yelp data is too large for GitHub and covered by Yelp's dataset terms
+data/raw/
+*.json
+*.tar
+*.zip
+
+# Downloaded boundary caches (re-downloadable)
+data/boundaries/
+
+# Large intermediate review file (keep the smaller .rds files if under ~50 MB)
+data/new_orleans/la_restaurant_reviews.rds
+
+# R / RStudio / Quarto
 .Rhistory
 .RData
-.Ruserdata
+.Rproj.user/
+renv/library/
+renv/staging/
+/.quarto/
+*_files/
+.DS_Store
